@@ -17,8 +17,8 @@ SELECTION_MADE = "SELECTION_MADE"  # reservado
 PREDEFINED_ORDER = {
     "osint.modulos.nombres": 1,
     "osint.modulos.fecha_nacimiento": 2,
-    "osint.modulos.fallecido": 3,
-    "osint.modulos.juicios": 4,
+    "osint.modulos.lugar_nacimiento": 3,
+    "osint.modulos.estado_civil": 4,
     "osint.modulos.alimentos": 5,
     "osint.modulos.correos": 6,
 }
