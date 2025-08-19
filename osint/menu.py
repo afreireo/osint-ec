@@ -105,28 +105,62 @@ def parse_selection(raw: str, total: int) -> List[int]:
 
 def run_selected(mods: List[Tuple[str, str, object]], selected_idx: List[int], identificacion: str) -> None:
     """
-    Placeholder del runner. Aquí lanzarás las consultas reales.
-    Ctrl+C devuelve al menú (no sale de la app).
+    Ejecuta los módulos seleccionados.
+    - Si el módulo devuelve str → lo imprime tal cual.
+    - Si devuelve dict o list[dict] → se muestra como tabla.
+    - Si devuelve list[str] → imprime cada línea.
+    Ctrl+C regresa al menú (no cierra la app).
     """
-    clear_screen()
-    print_banner()
-    print(f"Identificación: {identificacion}\n")
-    print("Ejecutando módulos...\n")
     try:
-        for i in selected_idx:
-            mod_name, label, module = mods[i - 1]
-            print(f"- {label} (mod: {mod_name}) con Identificación: {identificacion}")
-            # Aquí llamarás algo como: module.search(identificacion)
-        print("\n(Stub) Ejecución simulada. Presiona Enter para volver al menú...")
-        input()
-    except KeyboardInterrupt:
         clear_screen()
         print_banner()
-        print("Ejecución interrumpida. Regresando al menú...\n")
+        print(f"Identificación: {identificacion}\n")
+        print("Ejecutando módulos...\n")
+
+        for i in selected_idx:
+            mod_name, label, module = mods[i - 1]
+            print(f"==> {label}\n")
+            try:
+                data = module.search(identificacion) if hasattr(module, "search") else None
+
+                if isinstance(data, str):
+                    print(data.strip() + ("\n" if data.strip() else ""))
+                elif isinstance(data, dict):
+                    _print_table([data], title=f"Resultados: {label}")
+                elif isinstance(data, list):
+                    if not data:
+                        print("(sin resultados)\n")
+                    elif all(isinstance(x, dict) for x in data):
+                        _print_table(data, title=f"Resultados: {label}")
+                    elif all(isinstance(x, str) for x in data):
+                        for line in data:
+                            print(line)
+                        print()
+                    else:
+                        print("(resultado no reconocido)\n")
+                elif data is None:
+                    print("(sin resultados)\n")
+                else:
+                    print("(resultado no reconocido)\n")
+
+            except KeyboardInterrupt:
+                clear_screen()
+                print_banner()
+                print("Ejecución interrumpida. Regresando al menú...\n")
+                return
+            except Exception:
+                # No exponemos trazas al usuario final
+                print("(error en el módulo)\n")
+
+        print("\nPresiona Enter para volver al menú...")
         try:
-            import time; time.sleep(0.8)
-        except Exception:
-            pass
+            input()
+        except KeyboardInterrupt:
+            return
+
+    except KeyboardInterrupt:
+        return
+
 
 def main_menu(identificacion: str) -> str:
     """
