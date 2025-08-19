@@ -16,7 +16,7 @@ SELECTION_MADE = "SELECTION_MADE"  # reservado
 # Orden predefinido por nombre de módulo (archivo)
 PREDEFINED_ORDER = {
     "osint.modulos.nombres": 1,
-    "osint.modulos.titulos": 2,
+    "osint.modulos.fecha_nacimiento": 2,
     "osint.modulos.fallecido": 3,
     "osint.modulos.juicios": 4,
     "osint.modulos.alimentos": 5,
