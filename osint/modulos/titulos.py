@@ -2,10 +2,10 @@
 # titulos.py — SENESCYT (Consulta de Títulos)
 from __future__ import annotations
 
-import os
 import re
 import sys
 import unicodedata
+from io import BytesIO
 from time import sleep
 from typing import List, Dict
 
@@ -13,30 +13,25 @@ from PIL import Image, ImageFilter
 from pytesseract import image_to_string
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeoutError
 
-import tempfile
-import shutil
-from pathlib import Path
-
 URL = "https://www.senescyt.gob.ec/consulta-titulos-web/faces/vista/consulta/consulta.xhtml"
 NOMBRE_MODULO = "Títulos SENESCYT"
 
 MAX_INTENTOS_CAPTCHA = 12
 WAIT_RESULT_MS = 7000  # espera tras "Buscar" a que aparezca tabla o mensaje
 
+# -------------------- Utilidades OCR/CAPTCHA (en memoria) --------------------
 
-# -------------------- Utilidades OCR/CAPTCHA --------------------
-
-def _preprocesar_imagen(captcha_path: str, output_path: str) -> str:
-    img = Image.open(captcha_path).convert("L")  # escala de grises
-    img = img.filter(ImageFilter.SHARPEN)        # enfocar
+def _preprocesar_imagen_bytes(captcha_bytes: bytes) -> Image.Image:
+    """Devuelve una PIL.Image preprocesada (sin escribir a disco)."""
+    img = Image.open(BytesIO(captcha_bytes)).convert("L")  # escala de grises
+    img = img.filter(ImageFilter.SHARPEN)                  # enfocar
     umbral = 128
-    img = img.point(lambda x: 255 if x > umbral else 0)  # binarización
-    img.save(output_path)
-    return output_path
+    img = img.point(lambda x: 255 if x > umbral else 0)    # binarización
+    return img
 
-def _resolver_captcha(captcha_path: str) -> str:
+def _resolver_captcha_img(img: Image.Image) -> str:
     return image_to_string(
-        Image.open(captcha_path),
+        img,
         config="--psm 7 -c tessedit_char_whitelist=0123456789abcdefghijklmnopqrstuvwxyz"
     ).strip()
 
@@ -46,6 +41,7 @@ def _texto_captcha_valido(txt: str) -> bool:
 # -------------------- Normalización de texto --------------------
 
 def _strip_accents(s: str) -> str:
+    import unicodedata
     return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
 
 def _norm(s: str) -> str:
@@ -63,10 +59,6 @@ _HEADERS_OBJETIVO = {
 }
 
 def _extraer_registros(page) -> List[Dict[str, str]]:
-    """
-    Busca tablas que contengan las columnas objetivo y devuelve
-    una lista de dicts con: fecha, titulo, ies.
-    """
     registros: List[Dict[str, str]] = []
     try:
         tablas = page.locator("table").all()
@@ -74,17 +66,13 @@ def _extraer_registros(page) -> List[Dict[str, str]]:
             ths = [th.inner_text().strip() for th in tabla.locator("th").all()]
             if not ths:
                 continue
-
-            # Mapa de encabezado normalizado -> índice
             header_idx = {_norm(h): i for i, h in enumerate(ths)}
-
-            # Verificar que existan las 3 columnas clave
             if not all(v in header_idx for v in _HEADERS_OBJETIVO.values()):
                 continue
 
-            i_fecha = header_idx[_HEADERS_OBJETIVO["fecha"]]
+            i_fecha  = header_idx[_HEADERS_OBJETIVO["fecha"]]
             i_titulo = header_idx[_HEADERS_OBJETIVO["titulo"]]
-            i_ies = header_idx[_HEADERS_OBJETIVO["ies"]]
+            i_ies    = header_idx[_HEADERS_OBJETIVO["ies"]]
 
             filas = tabla.locator("tbody tr").all()
             for fila in filas:
@@ -92,9 +80,9 @@ def _extraer_registros(page) -> List[Dict[str, str]]:
                 if not tds or max(i_fecha, i_titulo, i_ies) >= len(tds):
                     continue
                 registros.append({
-                    "fecha": tds[i_fecha],
+                    "fecha":  tds[i_fecha],
                     "titulo": tds[i_titulo],
-                    "ies": tds[i_ies],
+                    "ies":    tds[i_ies],
                 })
     except Exception:
         pass
@@ -109,7 +97,6 @@ def _verificar_resultado(page) -> str:
       - "CEDULA_INVALIDA"   (incluye 'No se encontraron resultados')
       - "RESULTADO_OK"
     """
-    # 1) Cualquier mensaje (error/warn/info/fatal)
     try:
         msg_box = page.locator('div#formPrincipal\\:messages')
         if msg_box.count() > 0:
@@ -122,28 +109,23 @@ def _verificar_resultado(page) -> str:
     except Exception:
         pass
 
-    # 2) ¿Hay registros reales en tabla?
     if _extraer_registros(page):
         return "RESULTADO_OK"
 
-    # 3) Sin mensaje ni tabla todavía: tratar como captcha incorrecto para reintentar
     return "CAPTCHA_INCORRECTO"
 
-
-def _intentar_resolver_captcha(page, cedula: str, tmpdir: Path) -> bool:
+def _intentar_resolver_captcha(page, cedula: str) -> bool:
     intento = 1
-    captcha_bytes_prev = None
+    captcha_bytes_prev: bytes | None = None
 
     while intento <= MAX_INTENTOS_CAPTCHA:
         page.fill('input#formPrincipal\\:identificacion', cedula)
 
         captcha_sel = 'img#formPrincipal\\:capimg'
-        captcha_path = tmpdir / f"captcha_{intento}.png"
-        pre_path     = tmpdir / f"captcha_pre_{intento}.png"
-
         try:
             page.wait_for_selector(captcha_sel, timeout=6000)
-            page.locator(captcha_sel).screenshot(path=str(captcha_path))
+            # Screenshot en memoria (bytes), ¡no se escribe a disco!
+            captcha_bytes = page.locator(captcha_sel).screenshot()
         except PWTimeoutError:
             page.reload()
             sleep(1)
@@ -151,29 +133,16 @@ def _intentar_resolver_captcha(page, cedula: str, tmpdir: Path) -> bool:
             continue
 
         # Evitar repetir el mismo captcha
-        try:
-            captcha_bytes = captcha_path.read_bytes()
-        except Exception:
-            captcha_bytes = None
-
         if captcha_bytes_prev == captcha_bytes and captcha_bytes is not None:
-            try: captcha_path.unlink(missing_ok=True)
-            except Exception: pass
             page.reload()
             sleep(1)
             intento += 1
             continue
         captcha_bytes_prev = captcha_bytes
 
-        # OCR
-        _preprocesar_imagen(str(captcha_path), str(pre_path))
-        txt = _resolver_captcha(str(pre_path))
-
-        # Limpieza de temporales de este intento
-        try: captcha_path.unlink(missing_ok=True)
-        except Exception: pass
-        try: pre_path.unlink(missing_ok=True)
-        except Exception: pass
+        # OCR en memoria
+        img = _preprocesar_imagen_bytes(captcha_bytes)
+        txt = _resolver_captcha_img(img)
 
         if not _texto_captcha_valido(txt):
             intento += 1
@@ -194,26 +163,15 @@ def _intentar_resolver_captcha(page, cedula: str, tmpdir: Path) -> bool:
         if estado == "RESULTADO_OK":
             return True
         if estado == "CEDULA_INVALIDA":
-            # Incluye el caso "No se encontraron resultados" => salimos rápido
             return False
 
-        # CAPTCHA_INCORRECTO u otro → reintentar
         intento += 1
 
-    # Límite de intentos alcanzado → tratamos como sin resultados para no colgarse
     return False
-
 
 # -------------------- Formateo de salida --------------------
 
 def _formatear_vertical(regs: List[Dict[str, str]]) -> str:
-    """
-    Bloques verticales:
-    Título
-    Institución de Educación Superior
-    Fecha de Registro
-    (una línea en blanco entre registros)
-    """
     if not regs:
         return ""
     bloques = []
@@ -237,7 +195,6 @@ def consultar(ci: str, timeout_ms: int = 45000) -> str:
       Institución de Educación Superior: ...
       Fecha de Registro: ...
 
-    (si hay varios, separados por una línea en blanco)
     o
       Títulos SENESCYT
 
@@ -248,68 +205,57 @@ def consultar(ci: str, timeout_ms: int = 45000) -> str:
         page = browser.new_page()
         page.set_default_timeout(timeout_ms)
 
-        tmpdir = Path(tempfile.mkdtemp(prefix="senescyt_"))
         try:
-            try:
-                page.goto(URL, wait_until="domcontentloaded", timeout=timeout_ms)
-            except PWTimeoutError:
-                return f"{NOMBRE_MODULO}\n\n(No se pudo cargar la página de SENESCYT)"
+            page.goto(URL, wait_until="domcontentloaded", timeout=timeout_ms)
+        except PWTimeoutError:
+            try: browser.close()
+            except Exception: pass
+            return f"{NOMBRE_MODULO}\n\n(No se pudo cargar la página de SENESCYT)"
 
-            ok = _intentar_resolver_captcha(page, ci, tmpdir)
-            if not ok:
-                return f"{NOMBRE_MODULO}\n\nNo se encontraron títulos para la cédula {ci}"
+        ok = _intentar_resolver_captcha(page, ci)
+        if not ok:
+            try: browser.close()
+            except Exception: pass
+            return f"{NOMBRE_MODULO}\n\nNo se encontraron títulos para la cédula {ci}"
 
-            regs = _extraer_registros(page)
-            if not regs:
-                return f"{NOMBRE_MODULO}\n\nNo se encontraron títulos para la cédula {ci}"
+        regs = _extraer_registros(page)
+        try: browser.close()
+        except Exception: pass
 
-            cuerpo = _formatear_vertical(regs)
-            return f"{NOMBRE_MODULO}\n\n{cuerpo}".rstrip()
-        finally:
-            # Cierre y limpieza garantizados
-            try:
-                browser.close()
-            except Exception:
-                pass
-            shutil.rmtree(tmpdir, ignore_errors=True)
+    if not regs:
+        return f"{NOMBRE_MODULO}\n\nNo se encontraron títulos para la cédula {ci}"
+
+    cuerpo = _formatear_vertical(regs)
+    return f"{NOMBRE_MODULO}\n\n{cuerpo}".rstrip()
 
 def consultar_o_none(ci: str, timeout_ms: int = 45000):
-    """
-    Igual que consultar(), pero devuelve None si no hay registros (útil para el menú).
-    """
     s = consultar(ci, timeout_ms=timeout_ms) or ""
     return s if "Fecha de Registro:" in s else None
 
 def search(ci: str, timeout_ms: int = 45000):
-    """
-    Usado por el menú:
-      - Devuelve SOLO el bloque vertical (sin encabezado) si hay títulos.
-      - Devuelve None si no hay resultados.
-    """
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
         page.set_default_timeout(timeout_ms)
 
-        tmpdir = Path(tempfile.mkdtemp(prefix="senescyt_"))
         try:
-            try:
-                page.goto(URL, wait_until="domcontentloaded", timeout=timeout_ms)
-            except PWTimeoutError:
-                return None
+            page.goto(URL, wait_until="domcontentloaded", timeout=timeout_ms)
+        except PWTimeoutError:
+            try: browser.close()
+            except Exception: pass
+            return None
 
-            ok = _intentar_resolver_captcha(page, ci, tmpdir)
-            if not ok:
-                return None
+        ok = _intentar_resolver_captcha(page, ci)
+        if not ok:
+            try: browser.close()
+            except Exception: pass
+            return None
 
-            regs = _extraer_registros(page)
-            return _formatear_vertical(regs).rstrip() if regs else None
-        finally:
-            try:
-                browser.close()
-            except Exception:
-                pass
-            shutil.rmtree(tmpdir, ignore_errors=True)
+        regs = _extraer_registros(page)
+        try: browser.close()
+        except Exception: pass
+
+    return _formatear_vertical(regs).rstrip() if regs else None
 
 # -------------------- CLI --------------------
 
