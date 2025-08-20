@@ -12,6 +12,7 @@ from . import __version__ as APP_VERSION
 BACK_TO_HOME = "BACK_TO_HOME"
 EXIT_APP = "EXIT_APP"
 SELECTION_MADE = "SELECTION_MADE"  # reservado
+ANSI_CLEAR_LINE = "\x1b[K"
 
 # Orden predefinido por nombre de módulo (archivo)
 PREDEFINED_ORDER = {
@@ -19,10 +20,10 @@ PREDEFINED_ORDER = {
     "osint.modulos.fecha_nacimiento": 2,
     "osint.modulos.lugar_nacimiento": 3,
     "osint.modulos.estado_civil": 4,
-    "osint.modulos.titulos": 5,
-    "osint.modulos.correo": 6,
-    "osint.modulos.supa": 7,
-    "osint.modulos.delitos": 8,
+    "osint.modulos.correo": 5,
+    "osint.modulos.supa": 6,
+    "osint.modulos.delitos": 7,
+    "osint.modulos.titulos": 8,
     "osint.modulos.iess_fallecidos": 9
 }
 
@@ -43,6 +44,11 @@ def clear_screen() -> None:
             print("\033c\033[3J\033[H\033[2J", end="")
     except Exception:
         pass
+
+
+def _rewrite_status_line(text: str) -> None:
+    print(f"\r{text}{ANSI_CLEAR_LINE}", end="", flush=True)
+
 
 def print_banner() -> None:
     print(BANNER, end="")
@@ -80,9 +86,10 @@ def parse_selection(raw: str, total: int) -> List[int]:
     """
     Convierte '1,3,5-7' a índices 1-based. Valida formato.
     Devuelve [] si el formato es inválido o si nada cae en rango.
+    Soporta Enter vacío como 'todos'.
     """
     raw = raw.strip().lower()
-    if raw in ("todos",):
+    if raw in ("", "todos"):
         return list(range(1, total + 1))
 
     if not re.fullmatch(r"\s*\d+(\s*-\s*\d+)?(\s*,\s*\d+(\s*-\s*\d+)?)*\s*", raw):
@@ -106,13 +113,15 @@ def parse_selection(raw: str, total: int) -> List[int]:
                     picked.append(x)
     return picked
 
+
 def run_selected(mods: List[Tuple[str, str, object]], selected_idx: List[int], identificacion: str) -> None:
     """
     Ejecuta los módulos seleccionados.
-    - Si el módulo devuelve str → lo imprime tal cual.
-    - Si devuelve dict o list[dict] → se muestra como tabla.
-    - Si devuelve list[str] → imprime cada línea.
-    Ctrl+C regresa al menú (no cierra la app).
+    - Si el módulo devuelve str → se imprime en la línea siguiente.
+    - Si devuelve dict o list[dict] → tabla.
+    - Si devuelve list[str] → cada línea debajo del encabezado.
+    - Solo "Sin registros" o "Modulo no disponible" quedan en la misma línea del encabezado.
+    Ctrl+C regresa al menú.
     """
     try:
         clear_screen()
@@ -122,29 +131,55 @@ def run_selected(mods: List[Tuple[str, str, object]], selected_idx: List[int], i
 
         for i in selected_idx:
             mod_name, label, module = mods[i - 1]
-            print(f"==> {label}\n")
+
+            # Estado inicial
+            print(f"==> {label}: Buscando...", end="", flush=True)
+
             try:
                 data = module.search(identificacion) if hasattr(module, "search") else None
 
+                # --- string ---
                 if isinstance(data, str):
-                    print(data.strip() + ("\n" if data.strip() else ""))
-                elif isinstance(data, dict):
-                    _print_table([data], title=f"Resultados: {label}")
-                elif isinstance(data, list):
-                    if not data:
-                        print("(sin resultados)\n")
-                    elif all(isinstance(x, dict) for x in data):
-                        _print_table(data, title=f"Resultados: {label}")
-                    elif all(isinstance(x, str) for x in data):
-                        for line in data:
-                            print(line)
+                    s = (data or "").strip()
+                    if not s:
+                        _rewrite_status_line(f"==> {label}: Sin registros")
                         print()
                     else:
-                        print("(resultado no reconocido)\n")
+                        _rewrite_status_line(f"==> {label}")
+                        print()
+                        print(s)
+
+                # --- dict (tabla) ---
+                elif isinstance(data, dict):
+                    _rewrite_status_line(f"==> {label}")
+                    print()
+                    _print_table([data], title=f"Resultados: {label}")
+
+                # --- list ---
+                elif isinstance(data, list):
+                    if not data:
+                        _rewrite_status_line(f"==> {label}: Sin registros")
+                        print()
+                    elif all(isinstance(x, dict) for x in data):
+                        _rewrite_status_line(f"==> {label}")
+                        print()
+                        _print_table(data, title=f"Resultados: {label}")
+                    elif all(isinstance(x, str) for x in data):
+                        _rewrite_status_line(f"==> {label}")
+                        print()
+                        for line in data:
+                            print(line)
+                    else:
+                        _rewrite_status_line(f"==> {label}: Modulo no disponible")
+                        print()
+
+                # --- None u otros ---
                 elif data is None:
-                    print("(sin resultados)\n")
+                    _rewrite_status_line(f"==> {label}: Sin registros")
+                    print()
                 else:
-                    print("(resultado no reconocido)\n")
+                    _rewrite_status_line(f"==> {label}: Modulo no disponible")
+                    print()
 
             except KeyboardInterrupt:
                 clear_screen()
@@ -152,8 +187,11 @@ def run_selected(mods: List[Tuple[str, str, object]], selected_idx: List[int], i
                 print("Ejecución interrumpida. Regresando al menú...\n")
                 return
             except Exception:
-                # No exponemos trazas al usuario final
-                print("(error en el módulo)\n")
+                _rewrite_status_line(f"==> {label}: Modulo no disponible")
+                print()
+
+            # Espacio adicional después de cada módulo
+            print()
 
         print("\nPresiona Enter para volver al menú...")
         try:
@@ -163,6 +201,7 @@ def run_selected(mods: List[Tuple[str, str, object]], selected_idx: List[int], i
 
     except KeyboardInterrupt:
         return
+
 
 
 def main_menu(identificacion: str) -> str:
@@ -182,7 +221,7 @@ def main_menu(identificacion: str) -> str:
             _ = input("\nPresiona Enter para continuar...")
             return BACK_TO_HOME
 
-        print("Seleccione módulos (ej: 1,3,5-7) o escriba 'todos':\n")
+        print("Seleccione módulos (ej: 1,3,5-7) o presiona 'enter' para todos:\n")
         for idx, (_, label, _) in enumerate(mods, start=1):
             print(f"  {idx}. {label}")
         print("\n  0. Volver a la pantalla principal")
@@ -202,7 +241,7 @@ def main_menu(identificacion: str) -> str:
         if not selected:
             clear_screen()
             print_banner()
-            print("Formato inválido. Use números separados por coma, rangos (2-4) o 'todos'.")
+            print("Formato inválido. Use números separados por coma, rangos (2-4) o 'enter'.")
             print()
             continue
 

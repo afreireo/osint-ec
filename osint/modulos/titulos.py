@@ -17,6 +17,10 @@ from playwright.sync_api import sync_playwright, TimeoutError as PWTimeoutError
 URL = "https://www.senescyt.gob.ec/consulta-titulos-web/faces/vista/consulta/consulta.xhtml"
 NOMBRE_MODULO = "Títulos SENESCYT"
 
+MAX_INTENTOS_CAPTCHA = 12
+WAIT_RESULT_MS = 7000  # espera tras "Buscar" a que aparezca tabla o mensaje
+
+
 # -------------------- Utilidades OCR/CAPTCHA --------------------
 
 def _preprocesar_imagen(captcha_path: str, output_path: str = "captcha_preprocessed.png") -> str:
@@ -99,53 +103,66 @@ def _verificar_resultado(page) -> str:
     """
     Devuelve:
       - "CAPTCHA_INCORRECTO"
-      - "CEDULA_INVALIDA"
+      - "CEDULA_INVALIDA"   (incluye 'No se encontraron resultados')
       - "RESULTADO_OK"
     """
+    # 1) Cualquier mensaje (error/warn/info/fatal)
     try:
-        msg = page.locator('div#formPrincipal\\:messages div.ui-messages-error').inner_text(timeout=1500)
-        if "Caracteres incorrectos" in msg:
-            return "CAPTCHA_INCORRECTO"
-        if "No se encontraron resultados" in msg:
-            return "CEDULA_INVALIDA"
+        msg_box = page.locator('div#formPrincipal\\:messages')
+        if msg_box.count() > 0:
+            txt = msg_box.inner_text(timeout=1500)
+            n = _norm(txt)
+            if "caracteres incorrectos" in n:
+                return "CAPTCHA_INCORRECTO"
+            if ("no se encontraron resultados" in n) or ("no existen registros" in n):
+                return "CEDULA_INVALIDA"
     except Exception:
         pass
 
-    # Si podemos extraer al menos un registro, es OK
+    # 2) ¿Hay registros reales en tabla?
     if _extraer_registros(page):
         return "RESULTADO_OK"
 
-    # A veces tarda en pintar la tabla; consideramos como captcha incorrecto para reintentar
+    # 3) Sin mensaje ni tabla todavía: tratar como captcha incorrecto para reintentar
     return "CAPTCHA_INCORRECTO"
+
 
 def _intentar_resolver_captcha(page, cedula: str) -> bool:
     intento = 1
     captcha_bytes_prev = None
 
-    while True:
+    while intento <= MAX_INTENTOS_CAPTCHA:
         page.fill('input#formPrincipal\\:identificacion', cedula)
 
         captcha_sel = 'img#formPrincipal\\:capimg'
         captcha_path = f"captcha_{intento}.png"
         try:
+            page.wait_for_selector(captcha_sel, timeout=6000)
             page.locator(captcha_sel).screenshot(path=captcha_path)
         except PWTimeoutError:
             page.reload()
             sleep(1)
             continue
 
-        with open(captcha_path, "rb") as f:
-            captcha_bytes = f.read()
-        if captcha_bytes_prev == captcha_bytes:
+        # Evitar repetir el mismo captcha
+        try:
+            with open(captcha_path, "rb") as f:
+                captcha_bytes = f.read()
+        except Exception:
+            captcha_bytes = None
+
+        if captcha_bytes_prev == captcha_bytes and captcha_bytes is not None:
             page.reload()
             sleep(1)
+            intento += 1
             continue
         captcha_bytes_prev = captcha_bytes
 
+        # OCR
         pre = _preprocesar_imagen(captcha_path)
         txt = _resolver_captcha(pre)
 
-        # Limpieza de archivos temporales
+        # Limpieza de temporales
         for fp in (captcha_path, pre):
             try:
                 if os.path.exists(fp):
@@ -157,16 +174,31 @@ def _intentar_resolver_captcha(page, cedula: str) -> bool:
             intento += 1
             continue
 
+        # Enviar
         page.fill('input#formPrincipal\\:captchaSellerInput', txt)
         page.click('button#formPrincipal\\:boton-buscar')
+
+        # Esperar a que aparezca resultado (mensaje o tabla)
+        try:
+            page.wait_for_selector("div#formPrincipal\\:messages, table tbody tr", timeout=WAIT_RESULT_MS)
+        except PWTimeoutError:
+            # No cambió nada visible: tratamos como captcha malo y reintentamos
+            intento += 1
+            continue
 
         estado = _verificar_resultado(page)
         if estado == "RESULTADO_OK":
             return True
         if estado == "CEDULA_INVALIDA":
+            # Incluye el caso "No se encontraron resultados" => salimos rápido
             return False
 
+        # CAPTCHA_INCORRECTO u otro → reintentar
         intento += 1
+
+    # Límite de intentos alcanzado → tratamos como sin resultados para no colgarse
+    return False
+
 
 # -------------------- Formateo de salida --------------------
 
