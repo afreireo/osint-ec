@@ -1,0 +1,6 @@
+playwright
+pytesseract
+Pillow
+beautifulsoup4
+lxml
+requests
