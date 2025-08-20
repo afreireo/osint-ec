@@ -5,7 +5,7 @@ import re
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeoutError
 
 URL = "https://iess.gob.ec/prjPensionesJubilacion-web/pages/solicitudGenerica/solicitud.jsf"
-NOMBRE_MODULO = "IESS Fallecidos"
+NOMBRE_MODULO = "Fallecidos"
 
 def consultar(ci: str, timeout_ms: int = 12000) -> str:
     """
