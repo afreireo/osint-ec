@@ -6,13 +6,13 @@ Framework de investigación OSINT con módulos plug-and-play y flujo unificado.
 
 ## Uso
 * Búsqueda en base a una identificación
-<img width="723" height="316" alt="1" src="https://github.com/user-attachments/assets/16c62340-a65a-4968-80ec-efbfd5e72e51" />
+<img width="650"  alt="1" src="https://github.com/user-attachments/assets/16c62340-a65a-4968-80ec-efbfd5e72e51" />
 
 * Selección de módulos
-<img width="722" height="566" alt="2" src="https://github.com/user-attachments/assets/43aa7be3-0964-4e67-9cce-bd539097aeb8" />
+<img width="650"  alt="2" src="https://github.com/user-attachments/assets/43aa7be3-0964-4e67-9cce-bd539097aeb8" />
 
 * Visualización de resultados
-<img width="816" height="913" alt="3" src="https://github.com/user-attachments/assets/ba3ab41c-68ee-4e57-a6b1-4f588687f72e" />
+<img width="650"  alt="3" src="https://github.com/user-attachments/assets/ba3ab41c-68ee-4e57-a6b1-4f588687f72e" />
 
 
 ## Instalación
