@@ -3,6 +3,18 @@
 
 Framework de investigación OSINT con módulos plug-and-play y flujo unificado.
 
+
+## Uso
+* Búsqueda en base a una identificación
+<img width="723" height="316" alt="1" src="https://github.com/user-attachments/assets/16c62340-a65a-4968-80ec-efbfd5e72e51" />
+
+* Selección de módulos
+<img width="722" height="566" alt="2" src="https://github.com/user-attachments/assets/43aa7be3-0964-4e67-9cce-bd539097aeb8" />
+
+* Visualización de resultados
+<img width="816" height="913" alt="3" src="https://github.com/user-attachments/assets/ba3ab41c-68ee-4e57-a6b1-4f588687f72e" />
+
+
 ## Instalación
 
 ### Linux
@@ -54,15 +66,6 @@ https://docs.coro.net/featured/agent/install-tesseract-windows/
 python osint-ec.py
 ```
 
-
-
-
-## Uso
-* Búsqueda en base a una identificación
-
-* Selección de módulos
-
-* Visualización de resultados
 
 ## Disclaimer
 Este proyecto se ofrece con fines investigativos y educativos. La información se obtiene de fuentes abiertas (OSINT) y su uso, tratamiento y difusión son responsabilidad exclusiva del usuario. Al utilizarlo, el usuario se compromete a respetar los Términos de Uso y la normativa aplicable de cada sitio consultado. En particular, los resultados provenientes del SIAF corresponden a una base de datos de acceso público conforme a los arts. 76.7.d de la Constitución, 13 del COFJ y 421 (inc. segundo) del COIP.
