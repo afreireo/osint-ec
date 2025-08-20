@@ -202,11 +202,11 @@ def search(ci: str, timeout_ms: int = 20000, headless: bool = True):
     salida = consultar(ci, timeout_ms=timeout_ms, headless=headless) or ""
     m = _RE_LINEA_EMAIL.search(salida)
     if m:
-        return f"Email: {m.group(1).strip()}"
+        return f"{m.group(1).strip()}"
     return None
 
 # --------- CLI ---------
 
 if __name__ == "__main__":
-    ci = sys.argv[1] if len(sys.argv) > 1 else "1726207275"
+    ci = sys.argv[1] if len(sys.argv) > 1 else "1726207260"
     print(consultar(ci))

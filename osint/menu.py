@@ -50,6 +50,12 @@ def _rewrite_status_line(text: str) -> None:
     print(f"\r{text}{ANSI_CLEAR_LINE}", end="", flush=True)
 
 
+def _up(n: int) -> str: return f"\x1b[{n}A"
+def _down(n: int) -> str: return f"\x1b[{n}B"
+def _cr() -> str: return "\r"
+
+
+
 def print_banner() -> None:
     print(BANNER, end="")
     print(f"\nversión: {APP_VERSION}\n")
@@ -116,12 +122,9 @@ def parse_selection(raw: str, total: int) -> List[int]:
 
 def run_selected(mods: List[Tuple[str, str, object]], selected_idx: List[int], identificacion: str) -> None:
     """
-    Ejecuta los módulos seleccionados.
-    - Si el módulo devuelve str → se imprime en la línea siguiente.
-    - Si devuelve dict o list[dict] → tabla.
-    - Si devuelve list[str] → cada línea debajo del encabezado.
-    - Solo "Sin registros" o "Modulo no disponible" quedan en la misma línea del encabezado.
-    Ctrl+C regresa al menú.
+    Muestra 'Buscando...' en la línea de debajo del encabezado.
+    - 'Sin registros' y 'Modulo no disponible' se quedan en la MISMA línea del encabezado.
+    - Cualquier resultado real se imprime DEBAJO del encabezado (reemplazando la línea de 'Buscando...').
     """
     try:
         clear_screen()
@@ -132,8 +135,9 @@ def run_selected(mods: List[Tuple[str, str, object]], selected_idx: List[int], i
         for i in selected_idx:
             mod_name, label, module = mods[i - 1]
 
-            # Estado inicial
-            print(f"==> {label}: Buscando...", end="", flush=True)
+            # Encabezado + línea de "Buscando..."
+            print(f"==> {label}")
+            print("Buscando...", end="", flush=True)
 
             try:
                 data = module.search(identificacion) if hasattr(module, "search") else None
@@ -142,43 +146,46 @@ def run_selected(mods: List[Tuple[str, str, object]], selected_idx: List[int], i
                 if isinstance(data, str):
                     s = (data or "").strip()
                     if not s:
-                        _rewrite_status_line(f"==> {label}: Sin registros")
+                        # Reescribe encabezado con 'Sin registros' y borra la línea 'Buscando...'
+                        print(_up(1) + _cr() + f"==> {label}: Sin registros{ANSI_CLEAR_LINE}", end="")
+                        print(_down(1) + _cr() + ANSI_CLEAR_LINE, end="")
                         print()
                     else:
-                        _rewrite_status_line(f"==> {label}")
-                        print()
+                        # Deja encabezado intacto, limpia 'Buscando...' y escribe contenido debajo
+                        print(_cr() + ANSI_CLEAR_LINE, end="")  # limpia la línea 'Buscando...'
                         print(s)
 
                 # --- dict (tabla) ---
                 elif isinstance(data, dict):
-                    _rewrite_status_line(f"==> {label}")
-                    print()
+                    print(_cr() + ANSI_CLEAR_LINE, end="")
                     _print_table([data], title=f"Resultados: {label}")
 
                 # --- list ---
                 elif isinstance(data, list):
                     if not data:
-                        _rewrite_status_line(f"==> {label}: Sin registros")
+                        print(_up(1) + _cr() + f"==> {label}: Sin registros{ANSI_CLEAR_LINE}", end="")
+                        print(_down(1) + _cr() + ANSI_CLEAR_LINE, end="")
                         print()
                     elif all(isinstance(x, dict) for x in data):
-                        _rewrite_status_line(f"==> {label}")
-                        print()
+                        print(_cr() + ANSI_CLEAR_LINE, end="")
                         _print_table(data, title=f"Resultados: {label}")
                     elif all(isinstance(x, str) for x in data):
-                        _rewrite_status_line(f"==> {label}")
-                        print()
+                        print(_cr() + ANSI_CLEAR_LINE, end="")
                         for line in data:
                             print(line)
                     else:
-                        _rewrite_status_line(f"==> {label}: Modulo no disponible")
+                        print(_up(1) + _cr() + f"==> {label}: Modulo no disponible{ANSI_CLEAR_LINE}", end="")
+                        print(_down(1) + _cr() + ANSI_CLEAR_LINE, end="")
                         print()
 
                 # --- None u otros ---
                 elif data is None:
-                    _rewrite_status_line(f"==> {label}: Sin registros")
+                    print(_up(1) + _cr() + f"==> {label}: Sin registros{ANSI_CLEAR_LINE}", end="")
+                    print(_down(1) + _cr() + ANSI_CLEAR_LINE, end="")
                     print()
                 else:
-                    _rewrite_status_line(f"==> {label}: Modulo no disponible")
+                    print(_up(1) + _cr() + f"==> {label}: Modulo no disponible{ANSI_CLEAR_LINE}", end="")
+                    print(_down(1) + _cr() + ANSI_CLEAR_LINE, end="")
                     print()
 
             except KeyboardInterrupt:
@@ -187,10 +194,12 @@ def run_selected(mods: List[Tuple[str, str, object]], selected_idx: List[int], i
                 print("Ejecución interrumpida. Regresando al menú...\n")
                 return
             except Exception:
-                _rewrite_status_line(f"==> {label}: Modulo no disponible")
+                # Fallo: reescribe encabezado con error y limpia 'Buscando...'
+                print(_up(1) + _cr() + f"==> {label}: Modulo no disponible{ANSI_CLEAR_LINE}", end="")
+                print(_down(1) + _cr() + ANSI_CLEAR_LINE, end="")
                 print()
 
-            # Espacio adicional después de cada módulo
+            # Espacio extra después de cada módulo
             print()
 
         print("\nPresiona Enter para volver al menú...")
