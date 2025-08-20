@@ -19,10 +19,11 @@ PREDEFINED_ORDER = {
     "osint.modulos.fecha_nacimiento": 2,
     "osint.modulos.lugar_nacimiento": 3,
     "osint.modulos.estado_civil": 4,
-    "osint.modulos.supa": 5,
-    "osint.modulos.iess_fallecidos": 6,
+    "osint.modulos.titulos": 5,
+    "osint.modulos.supa": 6,
     "osint.modulos.delitos": 7,
     "osint.modulos.correo": 8,
+    "osint.modulos.iess_fallecidos": 9
 }
 
 BANNER = r"""
