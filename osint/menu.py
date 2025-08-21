@@ -20,9 +20,9 @@ PREDEFINED_ORDER = {
     "osint.modulos.fecha_nacimiento": 2,
     "osint.modulos.lugar_nacimiento": 3,
     "osint.modulos.estado_civil": 4,
-    "osint.modulos.correo": 5,
-    "osint.modulos.supa": 6,
-    "osint.modulos.delitos": 7,
+    "osint.modulos.supa": 5,
+    "osint.modulos.delitos": 6,
+    "osint.modulos.correo": 7,
     "osint.modulos.titulos": 8,
     "osint.modulos.iess_fallecidos": 9
 }
