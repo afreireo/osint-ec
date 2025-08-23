@@ -1,6 +1,6 @@
 playwright
 pytesseract
-Pillow
+pillow
 beautifulsoup4
 lxml
 requests
